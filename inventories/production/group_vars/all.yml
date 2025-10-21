@@ -1,0 +1,30 @@
+---
+#contient des varibale applicable globalement ( commune entre tout les hots )
+#
+# Remote backup server details
+restic_remote_server: "10.10.10.1"
+restic_remote_user: "mjouhari"
+restic_remote_base_path: "/backups"
+restic_connection_type: "sftp"
+
+# Repository naming: backup.example.com:/backups/<hostname>
+restic_repo: "sftp:{{ restic_remote_user }}@{{ restic_remote_server }}:{{ restic_remote_base_path }}/{{ inventory_hostname }}"
+
+# Default retention (can be overridden per host)
+retention_daily: 7
+retention_weekly: 4
+retention_monthly: 6
+retention_yearly: 2
+
+# Default backup schedule
+backup_schedule: "0 2 * * *"
+
+# Backup user on client machines
+backup_user: "root"
+
+# Monitoring
+backup_alert_email: "mjouhari@urbanthink.eu"
+backup_log_retention_days: 30
+
+# SSH connection settings
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no'

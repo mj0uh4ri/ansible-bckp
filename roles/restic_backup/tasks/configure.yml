@@ -1,0 +1,85 @@
+---
+#Tasks de config des env variables pour Restic ( repo,passwords... )
+---
+- name: Deploy SSH private key for backup server access
+  copy:
+    content: "{{ restic_ssh_private_key }}"
+    dest: "{{ backup_ssh_dir }}/restic_backup_key"
+    owner: root
+    mode: '0600'
+  no_log: true
+
+- name: Deploy restic repository password file
+  copy:
+    content: "{{ (restic_passwords is defined and restic_passwords[inventory_hostname] is defined) | ternary(restic_passwords[inventory_hostname], '') }}"
+    dest: "{{ backup_config_dir }}/{{ inventory_hostname }}_password"
+    owner: root
+    mode: '0600'
+  no_log: true
+
+- name: Deploy backup script
+  template:
+    src: backup_script.sh
+    dest: "{{ backup_script_path }}"
+    owner: root
+    mode: '0750'
+
+- name: Deploy backup paths configuration
+  template:
+    src: backup_paths.txt.j2
+    dest: "{{ backup_config_dir }}/backup_paths.txt"
+    owner: root
+    mode: '0600'
+
+- name: Deploy exclude patterns file
+  template:
+    src: exclude_patterns.txt.j2
+    dest: "{{ backup_config_dir }}/exclude_patterns.txt"
+    owner: root
+    mode: '0600'
+  when: backup_excludes is defined
+
+- name: Test SSH connection to backup server
+  command: >
+    ssh -i {{ backup_ssh_dir }}/restic_backup_key 
+    -o StrictHostKeyChecking=no 
+    -o ConnectTimeout=10
+    {{ restic_remote_user }}@{{ restic_remote_server }} 
+    "echo 'Connection successful'"
+  register: ssh_test
+  changed_when: false
+  failed_when: false
+
+- name: Display SSH connection status
+  debug:
+    msg: "SSH connection to backup server: {{ 'SUCCESS' if ssh_test.rc == 0 else 'FAILED - Check SSH key and server access' }}"
+
+- name: Initialize restic repository
+  shell: |
+    export RESTIC_PASSWORD_FILE="{{ backup_config_dir }}/{{ inventory_hostname }}_password"
+    export RESTIC_REPOSITORY="{{ restic_repo }}"
+    restic cat config > /dev/null 2>&1 || restic init
+  environment:
+    RESTIC_SSH_COMMAND: "ssh -i {{ backup_ssh_dir }}/restic_backup_key -o StrictHostKeyChecking=no"
+  register: restic_init
+  changed_when: "'created restic repository' in restic_init.stderr"
+  failed_when: 
+    - restic_init.rc != 0
+    - "'Is there a repository at the following location?' not in restic_init.stderr"
+
+- name: Verify repository accessibility
+  shell: |
+    export RESTIC_PASSWORD_FILE="{{ backup_config_dir }}/{{ inventory_hostname }}_password"
+    export RESTIC_REPOSITORY="{{ restic_repo }}"
+    restic snapshots --last
+  environment:
+    RESTIC_SSH_COMMAND: "ssh -i {{ backup_ssh_dir }}/restic_backup_key -o StrictHostKeyChecking=no"
+  register: restic_verify
+  changed_when: false
+  failed_when: false
+
+- name: Display repository status
+  debug:
+    msg: |
+      Repository: {{ restic_repo }}
+      Status: {{ 'Initialized and accessible' if restic_verify.rc == 0 else 'Initialized (no snapshots yet)' }}

@@ -1,0 +1,134 @@
+---
+- name: Include installation tasks
+  include_tasks: install.yml
+
+- name: Include configuration tasks
+  include_tasks: configure.yml
+
+- name: Include cron setup tasks
+  include_tasks: setup_cron.yml
+
+# The tasks below are executed when the playbook sets `restic_perform_backup: true`.
+# They parse a central YAML config file, build the list of paths to back up for the
+# current host, set RESTIC environment variables from vault vars, and run restic
+# init (if needed), backup, forget/prune and check.
+
+- name: Perform immediate restic backup (parse central config)
+  hosts: localhost
+  gather_facts: no
+  when: false
+
+# The actual implementation is below as a set of conditional tasks so they execute
+# within the role context (with become: yes from the playbook).
+
+- block:
+  - name: Load central restic config file into a variable
+    set_fact:
+      restic_all_config: "{{ lookup('file', playbook_dir + '/' + (restic_config_file | default('../inventories/backup_config.yml'))) | from_yaml }}"
+
+  - name: Build server-specific config for this host
+    set_fact:
+      restic_server_cfg: "{{ restic_all_config.servers[inventory_hostname] | default({}) }}"
+
+  - name: Skip backup if no server config is defined for this host
+    debug:
+      msg: "No restic configuration defined for {{ inventory_hostname }} in {{ restic_config_file | default('inventories/backup_config.yml') }} - skipping backup"
+    when: restic_server_cfg == {}
+
+  - name: Ensure we have at least one path to back up
+    set_fact:
+      restic_backup_paths: "{{ (restic_server_cfg.paths | default([])) + ([restic_server_cfg.db_dump] if (restic_server_cfg.db_dump is defined and restic_server_cfg.db_dump | length > 0) else []) }}"
+    when: restic_server_cfg != {}
+
+  - name: Fail if there are no paths configured for this host
+    fail:
+      msg: "No backup paths or db_dump configured for {{ inventory_hostname }}; define at least one path under servers.{{ inventory_hostname }}.paths or servers.{{ inventory_hostname }}.db_dump"
+    when:
+      - restic_server_cfg != {}
+      - restic_backup_paths | length == 0
+
+  - name: Create temporary file with paths to back up
+    copy:
+      dest: "/tmp/restic_paths_{{ inventory_hostname }}.txt"
+      content: "{{ restic_backup_paths | join('\n') }}\n"
+      mode: '0600'
+    when: restic_server_cfg != {}
+
+  - name: Create exclude file if exclude patterns provided
+    copy:
+      dest: "/tmp/restic_excludes_{{ inventory_hostname }}.txt"
+      content: "{{ (restic_server_cfg.exclude | default([])) | join('\n') }}\n"
+      mode: '0600'
+    when: restic_server_cfg.exclude is defined and restic_server_cfg.exclude | length > 0
+
+  - name: Build restic repository URL
+    set_fact:
+      restic_repository: "sftp:{{ restic_sftp_user | default(restic_sftp_username | default('user')) }}@{{ restic_sftp_host | default('backuphost') }}:/backups/{{ inventory_hostname }}"
+    when: restic_server_cfg != {}
+
+  - name: Ensure RESTIC_PASSWORD is set from vault
+    assert:
+      that:
+        - restic_password is defined
+      fail_msg: "restic_password variable must be defined (e.g. in vault/backup_credentials.yml)"
+    when: restic_server_cfg != {}
+
+  - name: Check remote restic repository accessibility (snapshots)
+    command: "restic -r {{ restic_repository }} snapshots --no-lock"
+    environment:
+      RESTIC_PASSWORD: "{{ restic_password }}"
+    register: restic_snapshots
+    failed_when: false
+    changed_when: false
+    when: restic_server_cfg != {}
+
+  - name: Initialize restic repository if snapshots check failed
+    command: "restic -r {{ restic_repository }} init"
+    environment:
+      RESTIC_PASSWORD: "{{ restic_password }}"
+    register: restic_init
+    failed_when: restic_init.rc not in [0, 1]
+    changed_when: restic_init.rc == 0
+    when:
+      - restic_server_cfg != {}
+      - restic_snapshots is defined and restic_snapshots.rc != 0
+
+  - name: Run restic backup
+    command: >-
+      restic -r {{ restic_repository }} backup --files-from /tmp/restic_paths_{{ inventory_hostname }}.txt
+      {{ ('--exclude-file /tmp/restic_excludes_' + inventory_hostname + '.txt') if (restic_server_cfg.exclude is defined and restic_server_cfg.exclude | length > 0) else '' }}
+    environment:
+      RESTIC_PASSWORD: "{{ restic_password }}"
+    register: restic_backup_run
+    failed_when: restic_backup_run.rc != 0
+    when: restic_server_cfg != {}
+
+  - name: Run restic forget/prune according to retention policy
+    shell: >-
+      restic -r {{ restic_repository }} forget {{ restic_server_cfg.retention | default('') }} --prune
+    environment:
+      RESTIC_PASSWORD: "{{ restic_password }}"
+    register: restic_forget
+    failed_when: restic_forget.rc != 0
+    when:
+      - restic_server_cfg != {}
+      - restic_server_cfg.retention is defined and restic_server_cfg.retention | length > 0
+
+  - name: Run restic integrity check
+    command: "restic -r {{ restic_repository }} check"
+    environment:
+      RESTIC_PASSWORD: "{{ restic_password }}"
+    register: restic_check
+    failed_when: restic_check.rc != 0
+    when: restic_server_cfg != {}
+
+  - name: Clean up temporary files
+    file:
+      path: "{{ item }}"
+      state: absent
+    loop:
+      - "/tmp/restic_paths_{{ inventory_hostname }}.txt"
+      - "/tmp/restic_excludes_{{ inventory_hostname }}.txt"
+    when: restic_server_cfg != {}
+
+  when: restic_perform_backup | default(false)

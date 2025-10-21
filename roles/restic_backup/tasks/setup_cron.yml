@@ -1,0 +1,28 @@
+- name: Parse backup schedule components
+  set_fact:
+    cron_minute: "{{ backup_schedule.split()[0] }}"
+    cron_hour: "{{ backup_schedule.split()[1] }}"
+    cron_day: "{{ backup_schedule.split()[2] }}"
+    cron_month: "{{ backup_schedule.split()[3] }}"
+    cron_weekday: "{{ backup_schedule.split()[4] }}"
+
+- name: Setup automated backup cron job
+  cron:
+    name: "Restic automated backup for {{ inventory_hostname }}"
+    minute: "{{ cron_minute }}"
+    hour: "{{ cron_hour }}"
+    day: "{{ cron_day }}"
+    month: "{{ cron_month }}"
+    weekday: "{{ cron_weekday }}"
+    job: "{{ backup_script_path }} >> {{ backup_log_dir }}/cron.log 2>&1"
+    user: root
+    state: present
+
+- name: Setup log cleanup cron job
+  cron:
+    name: "Cleanup old restic backup logs"
+    minute: "0"
+    hour: "5"
+    job: "find {{ backup_log_dir }}/ -name 'backup-*.log' -mtime +{{ backup_log_retention_days }} -delete"
+    user: root
+    state: present

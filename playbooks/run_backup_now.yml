@@ -1,0 +1,13 @@
+- name: Execute Backup Immediately
+  hosts: backup_clients
+  become: yes
+  gather_facts: no
+  
+  tasks:
+    - name: Run backup script manually
+      shell: /usr/local/bin/restic-backup.sh
+      register: backup_output
+      
+    - name: Display backup results
+      debug:
+        var: backup_output.stdout_lines

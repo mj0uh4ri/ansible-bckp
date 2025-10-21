@@ -1,0 +1,20 @@
+# Default variables for restic_backup role
+restic_version: "latest"
+backup_user: "root"
+backup_log_dir: "/var/log/restic"
+backup_config_dir: "/root/.restic"
+backup_script_path: "/usr/local/bin/restic-backup.sh"
+backup_ssh_dir: "/root/.ssh"
+
+# Default retention (overridden by group_vars or host_vars)
+retention_daily: 7
+retention_weekly: 4
+retention_monthly: 6
+retention_yearly: 2
+
+# Default backup schedule
+backup_schedule: "0 2 * * *"
+
+# Performance tuning
+restic_cache_dir: "/root/.cache/restic"
+restic_compression: "auto"

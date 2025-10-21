@@ -1,0 +1,42 @@
+---
+- name: Install restic (Debian/Ubuntu)
+  apt:
+    name: restic
+    state: present
+    update_cache: yes
+  when: ansible_os_family == "Debian"
+
+- name: Install restic (RedHat/CentOS)
+  yum:
+    name: restic
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Create restic configuration directory
+  file:
+    path: "{{ backup_config_dir }}"
+    state: directory
+    owner: "{{ backup_user }}"
+    mode: '0700'
+
+#ex : backup_log_dir & backup_user renerencer depuis le fichier /defaults/main.yml
+- name: Create restic log directory
+  file:
+    path: "{{ backup_log_dir }}"
+    state: directory
+    owner: "{{ backup_user }}"
+    mode: '0755'
+
+- name: Create restic cache directory
+  file:
+    path: "{{ restic_cache_dir }}"
+    state: directory
+    owner: "{{ backup_user }}"
+    mode: '0700'
+
+- name: Create SSH directory for backup user
+  file:
+    path: "{{ backup_ssh_dir }}"
+    state: directory
+    owner: root
+    mode: '0700'

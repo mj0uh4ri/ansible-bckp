@@ -1,0 +1,40 @@
+---
+# config sur la machine destination
+#
+- name: Setup Restic Backup System
+  hosts: backup_clients
+  become: yes
+  gather_facts: yes
+  
+  vars_files:
+    - ../vault/backup_credentials.yml
+  
+  pre_tasks:
+    - name: Verify connectivity to all hosts
+      ping:
+      
+    - name: Display target hosts
+      debug:
+        msg: "Configuring backup for {{ inventory_hostname }} ({{ ansible_host }})"
+  
+  roles:
+    - restic_backup
+  
+  post_tasks:
+    - name: Display backup configuration summary
+      debug:
+        msg: |
+          ============================================
+          Backup Configuration for {{ inventory_hostname }}
+          ============================================
+          Repository: {{ restic_repo }}
+          Schedule: {{ backup_schedule }}
+          Backup Paths:
+          {% for path in backup_paths %}
+            - {{ path }}
+          {% endfor %}
+          Retention Policy:
+            Daily: {{ retention_daily }}
+            Weekly: {{ retention_weekly }}
+            Monthly: {{ retention_monthly }}
+            Yearly: {{ retention_yearly }}
