@@ -1,0 +1,23 @@
+# Development Infrastructure Server Configuration
+
+# Unique repository path on backup server
+restic_repo_name: "devs_hors_infra_repo"
+
+# Backup paths
+backup_paths:
+  - /var/lib/docker/volumes  # Docker volumes
+  - /etc/docker
+  - /home
+  - /opt/custom_apps
+
+# Exclude patterns
+backup_excludes:
+  - "**/.cache"
+
+# Backup schedule: Daily at 1:30 AM
+backup_schedule: "30 1 * * *"
+
+# Retention policy - Dev server, moderate retention
+retention_daily: 7       
+retention_weekly: 4     
+retention_monthly: 3     

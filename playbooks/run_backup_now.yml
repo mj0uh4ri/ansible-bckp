@@ -4,10 +4,16 @@
   gather_facts: no
   
   tasks:
+    - name: Display backup start
+      debug:
+        msg: "Starting immediate backup for {{ inventory_hostname }} ({{ restic_repo_name }})"
+    
     - name: Run backup script manually
       shell: /usr/local/bin/restic-backup.sh
       register: backup_output
+      async: 3600  
+
       
-    - name: Display backup results
+    - name: Display backup completion
       debug:
-        var: backup_output.stdout_lines
+        msg: "✓ Backup completed for {{ inventory_hostname }}"

@@ -20,9 +20,16 @@
 
 - name: Setup log cleanup cron job
   cron:
-    name: "Cleanup old restic backup logs"
+    name: "Cleanup old restic backup logs for {{ inventory_hostname }}"
     minute: "0"
     hour: "5"
     job: "find {{ backup_log_dir }}/ -name 'backup-*.log' -mtime +{{ backup_log_retention_days }} -delete"
     user: root
     state: present
+
+- name: Display cron schedule
+  debug:
+    msg: |
+      Backup scheduled for {{ inventory_hostname }}:
+      Schedule: {{ backup_schedule }} ({{ cron_hour }}:{{ cron_minute }} daily)
+      Retention: {{ retention_daily }}d / {{ retention_weekly }}w / {{ retention_monthly }}m / {{ retention_yearly }}y
